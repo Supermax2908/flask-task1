@@ -1,10 +1,11 @@
 import unittest
-import random
+from datetime import datetime
+from itertools import product
 
 from peewee import SqliteDatabase
 
 from app import app
-from peewee_db import Product
+from peewee_db import Product, Category
 
 
 test_db = SqliteDatabase(":memory:")
@@ -13,18 +14,27 @@ test_db = SqliteDatabase(":memory:")
 # Use test DB
 class AppTestCase(unittest.TestCase):
     def setUp(self):
-        # Make test client
         self.app = app.test_client()
-        # Propagate exceptions to the test client
         self.app.testing = True
 
-        # Use test DB
-        test_db.bind([Product])
+        test_db.bind([Product, Category])
         test_db.connect()
-        test_db.create_tables([Product])
+        test_db.create_tables([Product, Category])
 
-        # Create duplicated product
         Product.get_or_create(name="Duplicate", price=100)
+
+        self.category = Category.create(
+            name="Fruit",
+            created_at=datetime.now()
+        )
+
+        self.product_to_delete = Product.create(
+            name="Banana",
+            price=100,
+            is_18_plus=False,
+            created_at=datetime.now(),
+            category=self.category
+        )
 
     def tearDown(self):
         # Delete duplicated product
@@ -43,7 +53,7 @@ class AppTestCase(unittest.TestCase):
         self.assertEqual(len(response.json), 1)
 
     def test_products_post(self):
-        unique_product_name = f"test_{random.randint(1, 1000000)}"
+        unique_product_name = f"test_5"
         response = self.app.post("/products", json={"name": unique_product_name, "price": "100"})
 
         self.assertEqual(response.status_code, 201)
@@ -61,3 +71,11 @@ class AppTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json["error"], "Price must be a number")
+
+    def test_existing_product_delete(self):
+        response = self.app.delete(f"/products/{self.product_to_delete.id}")
+        self.assertEqual(response.status_code, 204)
+
+    def test_not_existing_product_delete(self):
+        response = self.app.delete(f"/products/999")
+        self.assertEqual(response.status_code, 404)
